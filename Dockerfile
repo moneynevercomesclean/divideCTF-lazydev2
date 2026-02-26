@@ -4,7 +4,7 @@ WORKDIR /app
 
 RUN pip install "pyjwt==1.7.1" "cryptography"
 
-COPY app/ .
+COPY . .
 
 EXPOSE 8080
 
