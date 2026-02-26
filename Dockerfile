@@ -6,6 +6,8 @@ COPY app .
 
 RUN pip install "pyjwt==1.7.1" "cryptography"
 
+COPY app/ .
+
 EXPOSE 8080
 
 CMD ["python", "app.py"]
