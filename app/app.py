@@ -13,7 +13,7 @@ BASE_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>AuthPortal v1.0</title>
+    <title>AuthPortal v2.0</title>
     <style>
         body { background: #0d0208; color: #00ff41; font-family: 'Courier New', Courier, monospace; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
         .container { border: 1px solid #00ff41; padding: 20px; box-shadow: 0 0 15px #00ff41; max-width: 600px; width: 90%; }
@@ -25,7 +25,7 @@ BASE_TEMPLATE = """
 </head>
 <body>
     <div class="container">
-        <h1>> AUTH_PORTAL_V1.0</h1>
+        <h1>> AUTH_PORTAL_V2.0</h1>
         <p>Current Identity: <span id="user-role">Guest</span></p>
         <button onclick="getToken()">Initialize Session (Get Token)</button>
         <div style="margin-top: 30px;">
