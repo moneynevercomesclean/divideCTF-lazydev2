@@ -3,42 +3,52 @@ import jwt
 import os
 import datetime
 import traceback
+import logging
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
 
 app = Flask(__name__)
 
-# Cloud Run provides PORT; default to 8080 for local/dev
+# Cloud Run provides PORT. Gunicorn binds to it; we keep this for local debug.
 PORT = int(os.environ.get("PORT", "8080"))
 FLAG = os.getenv("FLAG", "divide{local_testing_flag}")
 
-# --- Key loading (never crash on boot) ---
-raw_private = os.getenv("JWT_PRIVATE_KEY", "")
-raw_public = os.getenv("JWT_PUBLIC_KEY", "")
+# -----------------------
+# Key loading (non-fatal)
+# -----------------------
+def _env_pem_bytes(name: str) -> bytes:
+    """Read env var that may contain literal '\\n' and return bytes."""
+    v = os.getenv(name, "")
+    if not v:
+        return b""
+    return v.replace("\\n", "\n").encode("utf-8")
 
-# Allow env vars that store literal "\n" sequences (common in Cloud Run)
-raw_private_bytes = raw_private.replace("\\n", "\n").encode("utf-8")
-raw_public_bytes = raw_public.replace("\\n", "\n").encode("utf-8")
+RAW_PRIVATE = _env_pem_bytes("JWT_PRIVATE_KEY")
+RAW_PUBLIC = _env_pem_bytes("JWT_PUBLIC_KEY")
 
 PRIVATE_KEY = None
-PUBLIC_KEY = raw_public_bytes  # keep as bytes (HS256 confusion exploit behavior)
+PUBLIC_KEY = RAW_PUBLIC  # keep as bytes (needed for the intended HS256 confusion behavior)
+
+KEY_STATUS = {"private_loaded": False, "public_set": bool(PUBLIC_KEY)}
 
 try:
-    if raw_private_bytes and b"BEGIN" in raw_private_bytes:
+    if RAW_PRIVATE and b"BEGIN" in RAW_PRIVATE:
         PRIVATE_KEY = serialization.load_pem_private_key(
-            raw_private_bytes,
-            password=None,
-            backend=default_backend(),
+            RAW_PRIVATE, password=None, backend=default_backend()
         )
-        app.logger.info("Successfully loaded PRIVATE_KEY.")
+        KEY_STATUS["private_loaded"] = True
+        app.logger.info("PRIVATE_KEY loaded.")
     else:
-        app.logger.warning("JWT_PRIVATE_KEY missing or does not look like PEM.")
-except Exception as e:
-    app.logger.exception("Failed to load PRIVATE_KEY: %s", e)
+        app.logger.warning("JWT_PRIVATE_KEY not set or not PEM formatted.")
+except Exception:
+    app.logger.exception("Failed to parse JWT_PRIVATE_KEY.")
     PRIVATE_KEY = None
+    KEY_STATUS["private_loaded"] = False
 
-# Provide a real template so "/" doesn't 500
+# -----------------------
+# Simple homepage template
+# -----------------------
 BASE_TEMPLATE = """
 <!doctype html>
 <html>
@@ -46,29 +56,43 @@ BASE_TEMPLATE = """
     <meta charset="utf-8" />
     <title>divideCTF lazydev2</title>
     <style>
-      body { font-family: sans-serif; max-width: 720px; margin: 40px auto; line-height: 1.4; }
+      body { font-family: sans-serif; max-width: 760px; margin: 40px auto; line-height: 1.4; }
       code, pre { background: #f6f6f6; padding: 2px 6px; border-radius: 6px; }
       .box { background: #f6f6f6; padding: 14px; border-radius: 12px; }
+      .ok { color: #117a37; font-weight: 600; }
+      .bad { color: #a61b1b; font-weight: 600; }
     </style>
   </head>
   <body>
     <h1>divideCTF lazydev2</h1>
+
     <div class="box">
-      <p><b>Endpoints</b></p>
+      <p><b>Health</b></p>
       <ul>
-        <li><code>GET /login</code> → returns a JWT for <code>ctf_player</code> (requires PRIVATE_KEY)</li>
-        <li><code>POST /verify</code> with JSON <code>{"token":"..."}</code></li>
-        <li><code>GET /healthz</code> → basic health check</li>
+        <li>/healthz → always 200</li>
+        <li>/readyz → 200 if PUBLIC key exists (and PRIVATE if you want /login)</li>
       </ul>
+
       <p><b>Key status</b></p>
       <ul>
-        <li>PRIVATE_KEY: {{ "loaded" if private_ok else "missing/bad" }}</li>
-        <li>PUBLIC_KEY: {{ "set" if public_ok else "missing" }}</li>
+        <li>PUBLIC_KEY:
+          {% if public_ok %}<span class="ok">set</span>{% else %}<span class="bad">missing</span>{% endif %}
+        </li>
+        <li>PRIVATE_KEY:
+          {% if private_ok %}<span class="ok">loaded</span>{% else %}<span class="bad">missing/bad</span>{% endif %}
+        </li>
       </ul>
     </div>
 
-    <h2>Try verify</h2>
+    <h2>Endpoints</h2>
+    <ul>
+      <li><code>GET /login</code> → returns a JWT (requires PRIVATE_KEY)</li>
+      <li><code>POST /verify</code> JSON: <code>{"token":"..."}</code></li>
+    </ul>
+
+    <h2>cURL examples</h2>
     <pre>
+curl -s {{ base_url }}/healthz
 curl -s {{ base_url }}/login
 curl -s -X POST {{ base_url }}/verify -H "Content-Type: application/json" -d '{"token":"..."}'
     </pre>
@@ -76,11 +100,14 @@ curl -s -X POST {{ base_url }}/verify -H "Content-Type: application/json" -d '{"
 </html>
 """
 
-# --- Error handler to make Cloud Run 500s debuggable ---
+# -----------------------
+# Error handler (for real unexpected crashes)
+# -----------------------
 @app.errorhandler(Exception)
 def handle_exception(e):
+    # Log full traceback to Cloud Run logs
     app.logger.exception("Unhandled exception: %s", e)
-    # Keep response compact; Cloud Run logs will have the full trace.
+    # Return a compact debug response (helpful for CTF / debugging)
     return jsonify(
         {
             "error": "internal_server_error",
@@ -89,79 +116,82 @@ def handle_exception(e):
         }
     ), 500
 
-
+# -----------------------
+# Routes
+# -----------------------
 @app.route("/healthz")
 def healthz():
     return jsonify({"ok": True}), 200
 
+@app.route("/readyz")
+def readyz():
+    # Ready if PUBLIC_KEY exists; PRIVATE_KEY affects /login only
+    if not PUBLIC_KEY:
+        return jsonify({"ready": False, "reason": "JWT_PUBLIC_KEY missing"}), 503
+    return jsonify({"ready": True, **KEY_STATUS}), 200
 
 @app.route("/")
 def index():
-    # base_url is best-effort; may be empty behind some proxies
     base_url = request.host_url.rstrip("/")
     return render_template_string(
         BASE_TEMPLATE,
-        private_ok=PRIVATE_KEY is not None,
-        public_ok=bool(PUBLIC_KEY),
         base_url=base_url,
+        private_ok=KEY_STATUS["private_loaded"],
+        public_ok=KEY_STATUS["public_set"],
     )
-
 
 @app.route("/login")
 def login():
+    # Don't claim "server error" — it's configuration, so 503 is clearer
     if not PRIVATE_KEY:
-        return (
-            jsonify(
-                {
-                    "error": "Server misconfiguration: PRIVATE_KEY could not be parsed.",
-                    "hint": "Set JWT_PRIVATE_KEY env var to a PEM private key, using literal \\n for newlines in Cloud Run.",
-                }
-            ),
-            500,
-        )
+        return jsonify(
+            {
+                "error": "service_unavailable",
+                "reason": "PRIVATE_KEY not configured",
+                "hint": "Set JWT_PRIVATE_KEY to a PEM private key (use literal \\n for newlines in env var).",
+            }
+        ), 503
 
     now = datetime.datetime.utcnow()
-    expiration_time = now + datetime.timedelta(minutes=10)
-
+    exp = now + datetime.timedelta(minutes=10)
     payload = {
         "username": "ctf_player",
         "role": "user",
         "iat": int(now.timestamp()),
-        "exp": int(expiration_time.timestamp()),
+        "exp": int(exp.timestamp()),
     }
 
-    try:
-        token = jwt.encode(payload, PRIVATE_KEY, algorithm="RS256")
-        # PyJWT 1.6.4 may return bytes
-        if isinstance(token, bytes):
-            token = token.decode("utf-8")
-        return jsonify({"token": token})
-    except Exception as e:
-        return jsonify({"error": f"Encoding error: {str(e)}"}), 500
-
+    token = jwt.encode(payload, PRIVATE_KEY, algorithm="RS256")
+    if isinstance(token, bytes):  # PyJWT 1.7.1 can return bytes depending on backend
+        token = token.decode("utf-8")
+    return jsonify({"token": token}), 200
 
 @app.route("/verify", methods=["POST"])
 def verify():
-    # Avoid 500 when Content-Type isn't JSON or body is empty
+    # Never 500 due to missing/invalid JSON
     data = request.get_json(silent=True) or {}
     token = data.get("token")
     if not token:
         return jsonify({"message": "No token provided!"}), 400
 
+    if not PUBLIC_KEY:
+        return jsonify({"message": "Server misconfiguration: PUBLIC_KEY missing."}), 503
+
     try:
-        # The intended vulnerability: algorithm confusion (RS256 + HS256 allowed)
+        # Intended vuln: allow both RS256 and HS256 (algorithm confusion)
         decoded = jwt.decode(token, PUBLIC_KEY, algorithms=["RS256", "HS256"])
 
         if decoded.get("role") == "admin":
-            return jsonify({"message": "ACCESS GRANTED: " + FLAG})
+            return jsonify({"message": "ACCESS GRANTED: " + FLAG}), 200
+
         return jsonify(
             {"message": f"ACCESS DENIED: Role '{decoded.get('role')}' is unauthorized."}
-        )
+        ), 200
     except Exception as e:
-        # Keep as 400 (bad token) but include error detail
         return jsonify({"message": f"SYSTEM_ERROR: {str(e)}"}), 400
 
-
+# Local dev only; Cloud Run uses gunicorn CMD
 if __name__ == "__main__":
-    app.logger.info("Starting server on port %d...", PORT)
+    logging.basicConfig(level=logging.INFO)
+    app.logger.info("Starting dev server on port %d...", PORT)
     app.run(host="0.0.0.0", port=PORT)
