@@ -1,16 +1,38 @@
-from pathlib import Path
 from flask import Flask, request, render_template_string, jsonify
 import jwt 
-import random
 import os
 import datetime
-import jwt
+# Import the serialization modules from cryptography
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.backends import default_backend
 
 app = Flask(__name__)
 port = int(os.environ.get('PORT', 8080))
 flag = os.getenv('FLAG', 'divide{local_testing_flag}')
-PRIVATE_KEY = os.getenv('JWT_PRIVATE_KEY', '').replace('\\n', '\n').encode('utf-8')
-PUBLIC_KEY = os.getenv('JWT_PUBLIC_KEY', '').replace('\\n', '\n').encode('utf-8')
+
+# 1. Load the raw strings from the environment
+raw_private = os.getenv('JWT_PRIVATE_KEY', '').replace('\\n', '\n').encode('utf-8')
+raw_public = os.getenv('JWT_PUBLIC_KEY', '').replace('\\n', '\n').encode('utf-8')
+
+# 2. Parse the Private Key properly for PyJWT 1.7.1 RS256 signing
+try:
+    if raw_private:
+        PRIVATE_KEY = serialization.load_pem_private_key(
+            raw_private,
+            password=None,
+            backend=default_backend()
+        )
+    else:
+        PRIVATE_KEY = None
+except Exception as e:
+    print(f"WARNING: Failed to load PRIVATE_KEY. {e}")
+    PRIVATE_KEY = None
+
+# We keep the PUBLIC_KEY as raw bytes. 
+# Why? Because the vulnerability requires the server to use this exact byte string 
+# as the HMAC secret when we pass alg="HS256". If we parse it into an RSA object, 
+# the HMAC math will fail!
+PUBLIC_KEY = raw_public
 
 BASE_TEMPLATE = """
 <!DOCTYPE html>
@@ -75,26 +97,26 @@ def index():
 @app.route('/login')
 def login():
     if not PRIVATE_KEY:
-        return jsonify({"error": "PRIVATE_KEY not loaded"}), 500
-    # 1. Set the expiration (e.g., 30 minutes from now)
+        return jsonify({"error": "PRIVATE_KEY not loaded or invalid"}), 500
+    
     now = datetime.datetime.utcnow()
-    expiration_time = now + datetime.timedelta(seconds=1)  # Token valid for 30 minutes
+    # Ensure token lives long enough for testing
+    expiration_time = now + datetime.timedelta(minutes=10) 
 
     payload = {
         "username": "ctf_player",
         "role": "user",
-        "iat": int(now.timestamp()),          # Issued At
-        "exp": int(expiration_time.timestamp()) # Expiration
+        "iat": int(now.timestamp()),
+        "exp": int(expiration_time.timestamp())
     }
 
-    # 2. Encode as usual
-    token = jwt.encode(payload, PRIVATE_KEY, algorithm="RS256")
-    
-    # Handle bytes/string conversion for older PyJWT versions
-    if isinstance(token, bytes):
-        token = token.decode('utf-8')
-
-    return jsonify({"token": token})
+    try:
+        token = jwt.encode(payload, PRIVATE_KEY, algorithm="RS256")
+        if isinstance(token, bytes):
+            token = token.decode('utf-8')
+        return jsonify({"token": token})
+    except Exception as e:
+        return jsonify({"error": f"Encoding error: {str(e)}"}), 500
 
 @app.route('/verify', methods=['POST'])
 def verify():
@@ -104,6 +126,8 @@ def verify():
         return jsonify({"message": "No token provided!"}), 400
 
     try:
+        # The vulnerability remains here. 
+        # PUBLIC_KEY is raw bytes. If alg=HS256, PyJWT 1.7.1 uses it as the HMAC secret.
         decoded = jwt.decode(token, PUBLIC_KEY, algorithms=["RS256", "HS256"])
 
         if decoded.get('role') == 'admin':
