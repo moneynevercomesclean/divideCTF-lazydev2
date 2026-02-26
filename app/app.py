@@ -9,8 +9,8 @@ import jwt
 app = Flask(__name__)
 port = int(os.environ.get('PORT', 8080))
 flag = os.getenv('FLAG', 'divide{local_testing_flag}')
-PRIVATE_KEY = os.getenv('JWT_PRIVATE_KEY', '')
-PUBLIC_KEY = os.getenv('JWT_PUBLIC_KEY', '')
+PRIVATE_KEY = os.getenv('JWT_PRIVATE_KEY', '').replace('\\n', '\n').encode()
+PUBLIC_KEY = os.getenv('JWT_PUBLIC_KEY', '').replace('\\n', '\n').encode()
 
 BASE_TEMPLATE = """
 <!DOCTYPE html>
@@ -74,6 +74,8 @@ def index():
 
 @app.route('/login')
 def login():
+    if not PRIVATE_KEY:
+        return jsonify({"error": "PRIVATE_KEY not loaded"}), 500
     # 1. Set the expiration (e.g., 30 minutes from now)
     now = datetime.datetime.utcnow()
     expiration_time = now + datetime.timedelta(seconds=1)  # Token valid for 30 minutes
