@@ -9,8 +9,8 @@ import jwt
 app = Flask(__name__)
 port = int(os.environ.get('PORT', 8080))
 flag = os.getenv('FLAG', 'divide{local_testing_flag}')
-PRIVATE_KEY = os.getenv('JWT_PRIVATE_KEY', '').replace('\\n', '\n').encode()
-PUBLIC_KEY = os.getenv('JWT_PUBLIC_KEY', '').replace('\\n', '\n').encode()
+PRIVATE_KEY = os.getenv('JWT_PRIVATE_KEY', '').replace('\\n', '\n').encode('utf-8')
+PUBLIC_KEY = os.getenv('JWT_PUBLIC_KEY', '').replace('\\n', '\n').encode('utf-8')
 
 BASE_TEMPLATE = """
 <!DOCTYPE html>
