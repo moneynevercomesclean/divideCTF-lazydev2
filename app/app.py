@@ -6,8 +6,8 @@ import os
 app = Flask(__name__)
 port = int(os.environ.get('PORT', 8080))
 flag = os.getenv('FLAG', 'divide{local_testing_flag}')
-JWT_PRIVATE_KEY = os.getenv("JWT_PRIVATE_KEY", "").encode()
-JWT_PUBLIC_KEY = os.getenv("JWT_PUBLIC_KEY", "").encode()
+PRIVATE_KEY = os.getenv("JWT_PRIVATE_KEY", "").replace('\\n', '\n').encode()
+PUBLIC_KEY = os.getenv("JWT_PUBLIC_KEY", "").replace('\\n', '\n').encode()
 
 BASE_TEMPLATE = """
 <!DOCTYPE html>
@@ -86,7 +86,7 @@ def login():
     }
 
     # 2. Encode as usual
-    token = jwt.encode(payload, JWT_PRIVATE_KEY, algorithm="HS256")
+    token = jwt.encode(payload, PRIVATE_KEY, algorithm="HS256")
     
     # Handle bytes/string conversion for older PyJWT versions
     if isinstance(token, bytes):
@@ -102,7 +102,7 @@ def verify():
         return jsonify({"message": "No token provided!"}), 400
 
     try:
-        decoded = jwt.decode(token, JWT_PUBLIC_KEY, algorithms=["RS256", "HS256"])
+        decoded = jwt.decode(token, PUBLIC_KEY, algorithms=["RS256", "HS256"])
 
         if decoded.get('role') == 'admin':
             return jsonify({"message": "ACCESS GRANTED: " + flag})
