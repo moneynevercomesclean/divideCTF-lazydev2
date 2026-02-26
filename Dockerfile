@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY app .
 
-RUN pip install flask pyjwt==2.8.0
+RUN pip install flask "pyjwt[crypto]==2.8.0"
 
 EXPOSE 8080
 
