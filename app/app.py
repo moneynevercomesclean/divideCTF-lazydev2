@@ -9,17 +9,8 @@ import jwt
 app = Flask(__name__)
 port = int(os.environ.get('PORT', 8080))
 flag = os.getenv('FLAG', 'divide{local_testing_flag}')
-PRIVATE_KEY_PATH = "/secrets/private.pem"
-PUBLIC_KEY_PATH = "/secrets/public.pem"
-
-def load_keys():
-    global PRIVATE_KEY, PUBLIC_KEY
-    try:
-        PRIVATE_KEY = Path(PRIVATE_KEY_PATH).read_bytes()
-        PUBLIC_KEY = Path(PUBLIC_KEY_PATH).read_bytes()
-        print("Successfully loaded RSA keys.")
-    except Exception as e:
-        print(f"ERROR: Could not load keys: {e}")
+PRIVATE_KEY = os.getenv('JWT_PRIVATE_KEY', '')
+PUBLIC_KEY = os.getenv('JWT_PUBLIC_KEY', '')
 
 BASE_TEMPLATE = """
 <!DOCTYPE html>
@@ -76,7 +67,6 @@ BASE_TEMPLATE = """
 </body>
 </html>
 """
-load_keys()
 
 @app.route('/')
 def index():
