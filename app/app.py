@@ -86,7 +86,7 @@ def login():
     }
 
     # 2. Encode as usual
-    token = jwt.encode(payload, PRIVATE_KEY, algorithm="HS256")
+    token = jwt.encode(payload, PRIVATE_KEY, algorithm="RS256")
     
     # Handle bytes/string conversion for older PyJWT versions
     if isinstance(token, bytes):
