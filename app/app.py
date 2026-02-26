@@ -12,10 +12,14 @@ flag = os.getenv('FLAG', 'divide{local_testing_flag}')
 PRIVATE_KEY_PATH = "/secrets/private.pem"
 PUBLIC_KEY_PATH = "/secrets/public.pem"
 
-def get_keys():
-    PRIVATE_KEY = Path(PRIVATE_KEY_PATH).read_bytes()
-    PUBLIC_KEY = Path(PUBLIC_KEY_PATH).read_bytes()
-    return PRIVATE_KEY, PUBLIC_KEY
+def load_keys():
+    global PRIVATE_KEY, PUBLIC_KEY
+    try:
+        PRIVATE_KEY = Path(PRIVATE_KEY_PATH).read_bytes()
+        PUBLIC_KEY = Path(PUBLIC_KEY_PATH).read_bytes()
+        print("Successfully loaded RSA keys.")
+    except Exception as e:
+        print(f"ERROR: Could not load keys: {e}")
 
 BASE_TEMPLATE = """
 <!DOCTYPE html>
@@ -72,7 +76,7 @@ BASE_TEMPLATE = """
 </body>
 </html>
 """
-get_keys()
+load_keys()
 
 @app.route('/')
 def index():
