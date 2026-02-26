@@ -1,13 +1,21 @@
+from pathlib import Path
 from flask import Flask, request, render_template_string, jsonify
 import jwt 
 import random
 import os
+import datetime
+import jwt
 
 app = Flask(__name__)
 port = int(os.environ.get('PORT', 8080))
 flag = os.getenv('FLAG', 'divide{local_testing_flag}')
-PRIVATE_KEY = os.getenv("JWT_PRIVATE_KEY", "").replace('\\n', '\n').encode()
-PUBLIC_KEY = os.getenv("JWT_PUBLIC_KEY", "").replace('\\n', '\n').encode()
+PRIVATE_KEY_PATH = "/secrets/private.pem"
+PUBLIC_KEY_PATH = "/secrets/public.pem"
+
+def get_keys():
+    PRIVATE_KEY = Path(PRIVATE_KEY_PATH).read_bytes()
+    PUBLIC_KEY = Path(PUBLIC_KEY_PATH).read_bytes()
+    return PRIVATE_KEY, PUBLIC_KEY
 
 BASE_TEMPLATE = """
 <!DOCTYPE html>
@@ -64,13 +72,11 @@ BASE_TEMPLATE = """
 </body>
 </html>
 """
+get_keys()
 
 @app.route('/')
 def index():
     return render_template_string(BASE_TEMPLATE)
-
-import datetime
-import jwt
 
 @app.route('/login')
 def login():
