@@ -11,7 +11,8 @@ port = int(os.environ.get('PORT', 8080))
 flag = os.getenv('FLAG', 'divide{local_testing_flag}')
 PRIVATE_KEY = os.getenv('JWT_PRIVATE_KEY', '').replace('\\n', '\n').encode()
 PUBLIC_KEY = os.getenv('JWT_PUBLIC_KEY', '').replace('\\n', '\n').encode()
-
+print(f"Loaded PRIVATE_KEY: {'Yes' if PRIVATE_KEY else 'No'}")
+print(f"Loaded PUBLIC_KEY: {'Yes' if PUBLIC_KEY else 'No'}")
 BASE_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -113,4 +114,4 @@ def verify():
         return jsonify({"message": f"SYSTEM_ERROR: {str(e)}"}), 400
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=port)
+    app.run(debug=True, host='0.0.0.0', port=port)
